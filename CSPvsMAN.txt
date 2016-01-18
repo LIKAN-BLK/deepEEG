@@ -1,0 +1,13 @@
+Man_filter:
+	Epoch = 0
+	Cost = 1.195569
+	Test error =  0.453125
+
+	Epoch = 2209
+	Cost = 0.041918
+	Test error =  0.234375
+
+csp:
+	Epoch = 2198
+	Cost = 0.147853
+	Test error =  0.203125
