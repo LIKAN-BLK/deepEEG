@@ -22,11 +22,7 @@ References:
 """
 __docformat__ = 'restructedtext en'
 
-import cPickle
-import gzip
-import os
-import sys
-import time
+
 
 import numpy
 

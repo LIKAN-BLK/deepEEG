@@ -15,31 +15,31 @@ y = np.array(data['y_train'], dtype=int)
 y=y.transpose()
 train_indexes,test_indexes = cross_validation.train_test_split(np.arange(y.size), test_size=0.2,random_state=0)
 x_train=x[:,:,train_indexes]
-x_test=x[:,:,test_indexes]
+# x_test=x[:,:,test_indexes]
 y_train=y[train_indexes]
-y_test=y[test_indexes]
+# y_test=y[test_indexes]
 
 # Band-pass filter signal
 samp_rate = 100.
 (b, a) = signal.butter(5, np.array([8., 30.]) / (samp_rate / 2.), 'band')
 x_train_filt = signal.filtfilt(b, a, x_train, axis=0)
-x_test_filt  = signal.filtfilt(b, a, x_test, axis=0)
+# x_test_filt  = signal.filtfilt(b, a, x_test, axis=0)
 
-def man_filter(x,y,beta):
-    x_t = x[y.astype(bool)]
-    x_nt = x[~y.astype(bool)]
-    D = (np.mean(x_t,2) - np.mean(x_nt,2)).transpose()*(np.mean(x_t,2) - np.mean(x_nt,2))
-    DT = 0;
-    for i in np.arange(x_t.shape[2]):
-        DT=DT+np.dot(x_t[:,:,i].transpose(),x_t[:,:,i])
-    DT = DT/x_t.shape[2]
-    DT = DT - np.dot(x_t.sum(2).transpose(),x_t.sum(2))/(x_t.shape[2]^2)
-    DNT = 0
-    for i in np.arange(x_nt.shape[2]):
-        DNT=DNT + np.dot(x_nt[:,:,i].transpose(),x_nt[:,:,i])
-    DNT = DNT/x_nt.shape[2]
-    DNT = DNT - np.dot(x_nt.sum(2).transpose(),x_nt.sum(2))/(x_nt.shape[2]^2)
-    R = (beta*DT + (1 - beta)*DNT);
+# def man_filter(x,y,beta):
+#     x_t = x[y.astype(bool)]
+#     x_nt = x[~y.astype(bool)]
+#     D = (np.mean(x_t,2) - np.mean(x_nt,2)).transpose()*(np.mean(x_t,2) - np.mean(x_nt,2))
+#     DT = 0;
+#     for i in np.arange(x_t.shape[2]):
+#         DT=DT+np.dot(x_t[:,:,i].transpose(),x_t[:,:,i])
+#     DT = DT/x_t.shape[2]
+#     DT = DT - np.dot(x_t.sum(2).transpose(),x_t.sum(2))/(x_t.shape[2]^2)
+#     DNT = 0
+#     for i in np.arange(x_nt.shape[2]):
+#         DNT=DNT + np.dot(x_nt[:,:,i].transpose(),x_nt[:,:,i])
+#     DNT = DNT/x_nt.shape[2]
+#     DNT = DNT - np.dot(x_nt.sum(2).transpose(),x_nt.sum(2))/(x_nt.shape[2]^2)
+#     R = (beta*DT + (1 - beta)*DNT);
 
 def csp(x_train_filt, y_train):
     """Calculate Common Spatial Patterns Decompostion and Returns
@@ -69,26 +69,26 @@ def csp(x_train_filt, y_train):
 
     return W
 
-def classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test):
-    """ Classify data using CSP filter W"""
-    # Project data
-    proj_train = sp.tensordot(W.transpose(), x_train_filt, axes=[1,1])
-    proj_test  = sp.tensordot(W.transpose(), x_test_filt, axes=[1,1])
-
-    # Calculate features
-
-    ftr = np.log( np.tensordot(proj_train**2, V, axes=[1,0]) )[:,:,0]
-    fte = np.log( np.tensordot(proj_test **2, V, axes=[1,0]) )[:,:,0]
-    # Classify
-    logistic = LR()
-    logistic.fit(ftr.transpose(), y_train[:,0])
-    sc = logistic.score(fte.transpose(), y_test[:,0])
-
-    return sc
+# def classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test):
+#     """ Classify data using CSP filter W"""
+#     # Project data
+#     proj_train = sp.tensordot(W.transpose(), x_train_filt, axes=[1,1])
+#     proj_test  = sp.tensordot(W.transpose(), x_test_filt, axes=[1,1])
+#
+#     # Calculate features
+#
+#     ftr = np.log( np.tensordot(proj_train**2, V, axes=[1,0]) )[:,:,0]
+#     fte = np.log( np.tensordot(proj_test **2, V, axes=[1,0]) )[:,:,0]
+#     # Classify
+#     logistic = LR()
+#     logistic.fit(ftr.transpose(), y_train[:,0])
+#     sc = logistic.score(fte.transpose(), y_test[:,0])
+#
+#     return sc
 
 W = csp(x_train_filt, y_train)
 V = np.ones((50,1))
-sc = classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test)
+#sc = classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test)
 
 # Fine tune CSP pipeline
 # Note input data dim: [batches, time, channel]
@@ -96,9 +96,9 @@ sc = classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test)
 from logistic_sgd import LogisticRegression
 
 x_train_filt_T = theano.shared(x_train_filt.transpose(2, 0, 1))
-x_test_filt_T  = theano.shared(x_test_filt.transpose(2, 0, 1))
+# x_test_filt_T  = theano.shared(x_test_filt.transpose(2, 0, 1))
 y_train_T      = T.cast( theano.shared(y_train[:,0]), 'int32')
-y_test_T       = T.cast( theano.shared(y_test[:,0]) , 'int32')
+# y_test_T       = T.cast( theano.shared(y_test[:,0]) , 'int32')
 
 lr         = .01 # learning rate
 batch_size = y_train.size/4
@@ -131,8 +131,8 @@ train_model = theano.function([index], cost, updates=updates,
 
 
 
-test_model = theano.function([], layer2.errors(y), givens = {
-        X: x_test_filt_T, y: y_test_T})
+# test_model = theano.function([], layer2.errors(y), givens = {
+#         X: x_test_filt_T, y: y_test_T})
 
 
 for i in range(epochs):
@@ -140,7 +140,7 @@ for i in range(epochs):
         cost_ij = train_model(j)
 
 
-    er = test_model()
+    # er = test_model()
     print 'Epoch = %i' % i
     print 'Cost = %f' % cost_ij
-    print 'Test error = % f' % er
+    # print 'Test error = % f' % er
