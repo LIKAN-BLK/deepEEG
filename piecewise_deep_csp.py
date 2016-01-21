@@ -121,7 +121,7 @@ variance   = T.tensordot(layer0_out, avg_v, axes=[1,0])
 
 layer1_out = T.log((variance))[:,:,0]
 layer2     = LogisticRegression(input=layer1_out, n_in=5, n_out=2)
-cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(avg_v,2))
+cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(avg_v,2)) + 1000*(T.sgn(T.min(avg_v)) - 1)*T.pow(T.min(avg_v),2)
 
 params  = [csp_w, avg_v] + layer2.params
 
@@ -155,3 +155,5 @@ for i in range(epochs):
     print 'Epoch = %i' % i
     print 'Cost = %f' % cost_ij
     print 'Test error = % f' % er
+    if np.isnan(cost_ij):
+        break
