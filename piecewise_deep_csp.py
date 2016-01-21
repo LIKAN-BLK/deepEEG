@@ -6,6 +6,7 @@ import theano.tensor as T
 from scipy import signal
 from sklearn import cross_validation
 from sklearn.linear_model import LogisticRegression as LR
+from theano.compile.debugmode import DebugMode
 
 
 # Load dataset
@@ -26,9 +27,9 @@ x_train_filt = signal.filtfilt(b, a, x_train, axis=0)
 x_test_filt  = signal.filtfilt(b, a, x_test, axis=0)
 
 def man_filter(x,y,beta):
-    x_t = x[y.astype(bool)]
-    x_nt = x[~y.astype(bool)]
-    D = (np.mean(x_t,2) - np.mean(x_nt,2)).transpose()*(np.mean(x_t,2) - np.mean(x_nt,2))
+    x_t = x[:,:,np.squeeze(y).astype(bool)]
+    x_nt = x[:,:,~(np.squeeze(y).astype(bool))]
+    D = np.dot((np.mean(x_t,2) - np.mean(x_nt,2)).transpose(),(np.mean(x_t,2) - np.mean(x_nt,2)))
     DT = 0;
     for i in np.arange(x_t.shape[2]):
         DT=DT+np.dot(x_t[:,:,i].transpose(),x_t[:,:,i])
@@ -39,7 +40,12 @@ def man_filter(x,y,beta):
         DNT=DNT + np.dot(x_nt[:,:,i].transpose(),x_nt[:,:,i])
     DNT = DNT/x_nt.shape[2]
     DNT = DNT - np.dot(x_nt.sum(2).transpose(),x_nt.sum(2))/(x_nt.shape[2]^2)
-    R = (beta*DT + (1 - beta)*DNT);
+    R = (beta*DT + (1 - beta)*DNT)
+    w, v = sp.linalg.eig(D,R)
+    ind = sorted(range(w.size), key=lambda k: w[k])
+    v=v[:,ind]
+    return v
+
 
 def csp(x_train_filt, y_train):
     """Calculate Common Spatial Patterns Decompostion and Returns
@@ -86,8 +92,8 @@ def classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test):
 
     return sc
 
-W = csp(x_train_filt, y_train)
-V = np.ones((50,1))
+W = csp(x_train_filt, y_train) #(CH x 5)
+V = np.ones((x.shape[0],1)) #(T x 1)
 sc = classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test)
 
 # Fine tune CSP pipeline
@@ -110,6 +116,7 @@ csp_w      = theano.shared(W)
 avg_v      = theano.shared(V)
 proj_csp   = T.tensordot(X,csp_w,axes=[2,0])
 layer0_out = T.pow(proj_csp, 2)
+
 variance   = T.tensordot(layer0_out, avg_v, axes=[1,0])
 
 layer1_out = T.log((variance))[:,:,0]
@@ -134,10 +141,14 @@ train_model = theano.function([index], cost, updates=updates,
 test_model = theano.function([], layer2.errors(y), givens = {
         X: x_test_filt_T, y: y_test_T})
 
+num_gradient = theano.function([index], grads[0], mode = 'DebugMode',
+                               givens = {X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
+                                         y: y_train_T[index * batch_size: (index + 1) * batch_size]})
 
 for i in range(epochs):
     for j in range(y_train.size/batch_size):
         cost_ij = train_model(j)
+        #num_gradij = num_gradient(j)
 
 
     er = test_model()
