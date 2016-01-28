@@ -126,7 +126,7 @@ y          = T.ivector('y')
 X          = T.tensor3('X')
 csp_w      = theano.shared(W)
 avg_v      = theano.shared(V)
-U = theano.shared(value=np.zeros((5, 2), dtype=theano.config.floatX),   #TODO change 5 to number of eigenvector , 2 to number of classes
+u = theano.shared(value=np.zeros((5, 2), dtype=theano.config.floatX),   #TODO change 5 to number of eigenvector , 2 to number of classes
                                 name='W', borrow=True)
 b = theano.shared(value=np.zeros((2,),dtype=theano.config.floatX),      #TODO change 2 to number of classes
                                name='b', borrow=True)
@@ -144,43 +144,68 @@ def full_cost(W,V,U,B,X,y):
     layer0_out = T.pow(spacial_filtered, 2)
     variance   = T.tensordot(layer0_out, V, axes=[1,0])
     layer1_out = T.log((variance))[:,:,0]
-    layer2     = LogisticRegression(input=layer1_out,U=U,b=B, n_in=5, n_out=2)
+    layer2     = LogisticRegression(input=layer1_out,U=U,B=B, n_in=5, n_out=2)
     cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(V,2)) - 1000*(T.sgn(T.min(V)) - 1)*T.pow(T.min(V),2)
     return cost
 
-params  = [csp_w, avg_v,U,b]
+def armijo_rule(W,V,U,B,examples,labels,num_grads):
+    sigma = 0.1
+    beta = 0.5
+    alpha = 0.1
+    grad_norm=0
+    y          = T.ivector('y')
+    X          = T.tensor3('X')
+    for i in np.arange(3):
+        grad_norm +=(np.linalg.norm(grads[i])**2)
+    while True:
+        costda = full_cost(W-alpha*grads[0],V-alpha*grads[1],U-alpha*grads[2],B-alpha*grads[3],X,y)
+        cost = full_cost(W,V,U,B,X,y)
 
-grads   = T.grad(full_cost,params)
+
+        if (costda.eval({X:examples,y:labels}) < cost.eval({X:examples,y:labels})-sigma*alpha*grad_norm):
+            break
+        alpha = alpha*beta
+    return alpha
+
+
+
+params  = [csp_w, avg_v,u,b]
+cost = full_cost(csp_w, avg_v,u,b,X,y)
+grads   = T.grad(cost,params)
+
 updates = []
 for param_i, grad_i in zip(params,grads):
     updates.append((param_i, param_i - lr*grad_i))
 
 
-train_model = theano.function([index,lr], full_cost, updates=updates,
+train_model = theano.function([index,lr], cost, updates=updates,
       givens={
           X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
           y: y_train_T[index * batch_size: (index + 1) * batch_size]})
 
 
 
-test_model = theano.function([], layer2.errors(y), givens = {
-        X: x_test_filt_T, y: y_test_T})
+# test_model = theano.function([], layer2.errors(y), givens = {
+#         X: x_test_filt_T, y: y_test_T})
 
 num_gradient = theano.function([index], [grads[0],grads[1],grads[2],grads[3]], mode = 'DebugMode',
                                givens = {X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
                                          y: y_train_T[index * batch_size: (index + 1) * batch_size]})
 
+
 for i in range(epochs):
     for j in range(y_train.size/batch_size):
         # lr = sp.optimize.line_search(train_model(j),)
+        armijo_rule(csp_w,avg_v,u,b,X,y,num_gradient)
         cost_ij = train_model(j,0.01)
+
         #num_gradij = num_gradient(j)
 
 
-    er = test_model()
+    # er = test_model()
     print 'Epoch = %i' % i
     print 'Cost = %f' % cost_ij
-    print 'Test error = % f' % er
+    # print 'Test error = % f' % er
     if np.isnan(cost_ij):
         break
 

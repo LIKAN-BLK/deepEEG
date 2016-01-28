@@ -64,7 +64,7 @@ class LogisticRegression(object):
         # initialize with 0 the weights W as a matrix of shape (n_in, n_out)
         self.W = U
         # initialize the baises b as a vector of n_out 0s
-        self.b = b
+        self.b = B
 
         # compute vector of class-membership probabilities in symbolic form
         self.p_y_given_x = T.nnet.softmax(T.dot(input, self.W) + self.b)
@@ -99,7 +99,7 @@ class LogisticRegression(object):
         # LP[n-1,y[n-1]]] and T.mean(LP[T.arange(y.shape[0]),y]) is
         # the mean (across minibatch examples) of the elements in v,
         # i.e., the mean log-likelihood across the minibatch.
-        return (-T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]),self.p_y_given_x,self.input, self.W, self.b)
+        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
 
     def errors(self, y):
         """Return a float representing the number of errors in the minibatch
