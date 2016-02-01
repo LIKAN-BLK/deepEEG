@@ -156,9 +156,9 @@ def armijo_rule(W,V,U,B,examples,labels,num_grads):
     y          = T.ivector('y')
     X          = T.tensor3('X')
     for i in np.arange(3):
-        grad_norm +=(np.linalg.norm(grads[i])**2)
+        grad_norm +=(np.linalg.norm(num_grads[i])**2)
     while True:
-        costda = full_cost(W-alpha*grads[0],V-alpha*grads[1],U-alpha*grads[2],B-alpha*grads[3],X,y)
+        costda = full_cost(W-alpha*num_grads[0],V-alpha*num_grads[1],U-alpha*num_grads[2],B-alpha*num_grads[3],X,y)
         cost = full_cost(W,V,U,B,X,y)
 
 
@@ -188,7 +188,7 @@ train_model = theano.function([index,lr], cost, updates=updates,
 # test_model = theano.function([], layer2.errors(y), givens = {
 #         X: x_test_filt_T, y: y_test_T})
 
-num_gradient = theano.function([index], [grads[0],grads[1],grads[2],grads[3]], mode = 'DebugMode',
+num_gradient = theano.function([index], [grads[0],grads[1],grads[2],grads[3]],
                                givens = {X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
                                          y: y_train_T[index * batch_size: (index + 1) * batch_size]})
 
@@ -196,8 +196,10 @@ num_gradient = theano.function([index], [grads[0],grads[1],grads[2],grads[3]], m
 for i in range(epochs):
     for j in range(y_train.size/batch_size):
         # lr = sp.optimize.line_search(train_model(j),)
-        armijo_rule(csp_w,avg_v,u,b,X,y,num_gradient)
-        cost_ij = train_model(j,0.01)
+        Xbatch = x_train_filt_T.eval()[j * batch_size: (j + 1) * batch_size]
+        ybatch = y_train_T.eval()[j * batch_size: (j + 1) * batch_size]
+        alpha = armijo_rule(csp_w,avg_v,u,b,Xbatch,ybatch,num_gradient(j))
+        cost_ij = train_model(j,alpha)
 
         #num_gradij = num_gradient(j)
 
