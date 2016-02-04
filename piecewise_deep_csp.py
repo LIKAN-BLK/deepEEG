@@ -148,31 +148,80 @@ def full_cost(W,V,U,B,X,y):
     cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(V,2)) - 1000*(T.sgn(T.min(V)) - 1)*T.pow(T.min(V),2)
     return cost
 
-def armijo_rule(W,V,U,B,examples,labels,num_grads):
-    sigma = 0.1
-    beta = 0.5
-    alpha = 0.1
-    grad_norm=0
-    y          = T.ivector('y')
-    X          = T.tensor3('X')
-    for i in np.arange(3):
-        grad_norm +=(np.linalg.norm(num_grads[i])**2)
-    while True:
-        costda = full_cost(W-alpha*num_grads[0],V-alpha*num_grads[1],U-alpha*num_grads[2],B-alpha*num_grads[3],X,y)
-        cost = full_cost(W,V,U,B,X,y)
 
-
-        if (costda.eval({X:examples,y:labels}) < cost.eval({X:examples,y:labels})-sigma*alpha*grad_norm):
-            break
-        alpha = alpha*beta
-    return alpha
-
+# def armijo_rule(W,V,U,B,examples,labels,num_grads):
+#     sigma = 0.1
+#     beta = 0.5
+#     alpha = 0.1
+#     grad_norm=0
+#     y          = T.ivector('y')
+#     X          = T.tensor3('X')
+#     for i in np.arange(3):
+#         grad_norm +=(np.linalg.norm(num_grads[i])**2)
+#     while True:
+#         costda = full_cost(W-alpha*num_grads[0],V-alpha*num_grads[1],U-alpha*num_grads[2],B-alpha*num_grads[3],X,y)
+#         cost = full_cost(W,V,U,B,X,y)
+#
+#
+#         if (costda.eval({X:examples,y:labels}) < cost.eval({X:examples,y:labels})-sigma*alpha*grad_norm):
+#             break
+#         alpha = alpha*beta
+#     # num_gradient = theano.function([index], grads,
+#     #                                givens = {X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
+#     #                                          y: y_train_T[index * batch_size: (index + 1) * batch_size]})
+#     # Xbatch = x_train_filt_T.eval()[j * batch_size: (j + 1) * batch_size]
+#         # ybatch = y_train_T.eval()[j * batch_size: (j + 1) * batch_size]
+#         # alpha = armijo_rule(csp_w,avg_v,u,b,Xbatch,ybatch,num_gradient(j))
+#
+#     return alpha
 
 
 params  = [csp_w, avg_v,u,b]
 cost = full_cost(csp_w, avg_v,u,b,X,y)
-grads   = T.grad(cost,params)
+def unrolled_cost_func(P,sizes,Xnum,ynum):
+    W = P[:sizes['W'][0]*sizes['W'][1]]
+    W = W.reshape(sizes['W'])
 
+    V = P[sizes['W'][0]*sizes['W'][1] : (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1])]
+    V = V.reshape(sizes['V'])
+
+    U = P[(sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]) : (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]+sizes['U'][0]*sizes['U'][1])]
+    U = U.reshape(sizes['U'])
+
+    B = P[ (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]+sizes['U'][0]*sizes['U'][1]) :]
+    B = B.reshape(sizes['B'])
+
+    y          = T.ivector('y')
+    X          = T.tensor3('X')
+    cost = full_cost(W,V,U,B,X,y)
+    return cost.eval({X:Xnum,y:ynum})
+
+
+grads   = T.grad(cost,params)
+grads_func = theano.function([X,y], grads)
+def unrolled_grads_func(P,sizes,X,y):
+
+    W =grads_func(X,y)[0].reshape(sizes['W'][0]*sizes['W'][1])
+    V =grads_func(X,y)[1].reshape(sizes['V'][0]*sizes['V'][1])
+    U =grads_func(X,y)[2].reshape(sizes['U'][0]*sizes['U'][1])
+    B =grads_func(X,y)[3].reshape(sizes['B'][0])
+    return np.hstack((W,V,U,B))
+
+def armijo_rule(P,sizes,examples,labels,c1=1e-4,c2=0.9,beta=0.1,alpha=0.1):
+
+    y          = T.ivector('y')
+    X          = T.tensor3('X')
+
+    pk=-unrolled_grads_func(P,sizes,examples,labels)
+    while True:
+        if (unrolled_cost_func(P+alpha*pk,sizes,examples,labels) < unrolled_cost_func(P,sizes,examples,labels)+c1*alpha*np.dot(pk,unrolled_grads_func(P,sizes,examples,labels))):
+            break
+        alpha = alpha*beta
+   
+    # if (np.dot(pk,unrolled_cost_func(P-alpha*pk,sizes,examples,labels)) < c2*np.dot(pk,unrolled_grads_func(P,sizes,examples,labels))):
+    #     return  None
+    # else:
+    return alpha
 updates = []
 for param_i, grad_i in zip(params,grads):
     updates.append((param_i, param_i - lr*grad_i))
@@ -188,17 +237,23 @@ train_model = theano.function([index,lr], cost, updates=updates,
 # test_model = theano.function([], layer2.errors(y), givens = {
 #         X: x_test_filt_T, y: y_test_T})
 
-num_gradient = theano.function([index], [grads[0],grads[1],grads[2],grads[3]],
-                               givens = {X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
-                                         y: y_train_T[index * batch_size: (index + 1) * batch_size]})
+
 
 
 for i in range(epochs):
     for j in range(y_train.size/batch_size):
-        # lr = sp.optimize.line_search(train_model(j),)
+        W_num = csp_w.eval().reshape(csp_w.eval().shape[0]*csp_w.eval().shape[1])
+        V_num = avg_v.eval().reshape(avg_v.eval().shape[0]*avg_v.eval().shape[1])
+        U_num = params[2].eval().reshape(params[2].eval().shape[0]*params[2].eval().shape[1])
+        B_num = params[3].eval().reshape(params[3].eval().shape[0])
+        sizes = {'W':csp_w.eval().shape,'V':avg_v.eval().shape,'U':params[2].eval().shape,'B':params[3].eval().shape}
+        P = np.hstack((W_num,V_num,U_num,B_num))
         Xbatch = x_train_filt_T.eval()[j * batch_size: (j + 1) * batch_size]
         ybatch = y_train_T.eval()[j * batch_size: (j + 1) * batch_size]
-        alpha = armijo_rule(csp_w,avg_v,u,b,Xbatch,ybatch,num_gradient(j))
+        unrolled_cost_func(P,sizes,Xbatch,ybatch)
+        # alpha=sp.optimize.line_search(unrolled_cost_func,unrolled_grads_func,P,-(unrolled_grads_func(P,sizes,Xbatch,ybatch)),args=(sizes,Xbatch,ybatch))
+        alpha=armijo_rule(P,sizes,Xbatch,ybatch)
+        print alpha
         cost_ij = train_model(j,alpha)
 
         #num_gradij = num_gradient(j)
