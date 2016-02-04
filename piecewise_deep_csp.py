@@ -149,33 +149,6 @@ def full_cost(W,V,U,B,X,y):
     return cost
 
 
-# def armijo_rule(W,V,U,B,examples,labels,num_grads):
-#     sigma = 0.1
-#     beta = 0.5
-#     alpha = 0.1
-#     grad_norm=0
-#     y          = T.ivector('y')
-#     X          = T.tensor3('X')
-#     for i in np.arange(3):
-#         grad_norm +=(np.linalg.norm(num_grads[i])**2)
-#     while True:
-#         costda = full_cost(W-alpha*num_grads[0],V-alpha*num_grads[1],U-alpha*num_grads[2],B-alpha*num_grads[3],X,y)
-#         cost = full_cost(W,V,U,B,X,y)
-#
-#
-#         if (costda.eval({X:examples,y:labels}) < cost.eval({X:examples,y:labels})-sigma*alpha*grad_norm):
-#             break
-#         alpha = alpha*beta
-#     # num_gradient = theano.function([index], grads,
-#     #                                givens = {X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
-#     #                                          y: y_train_T[index * batch_size: (index + 1) * batch_size]})
-#     # Xbatch = x_train_filt_T.eval()[j * batch_size: (j + 1) * batch_size]
-#         # ybatch = y_train_T.eval()[j * batch_size: (j + 1) * batch_size]
-#         # alpha = armijo_rule(csp_w,avg_v,u,b,Xbatch,ybatch,num_gradient(j))
-#
-#     return alpha
-
-
 params  = [csp_w, avg_v,u,b]
 cost = full_cost(csp_w, avg_v,u,b,X,y)
 def unrolled_cost_func(P,sizes,Xnum,ynum):
@@ -193,19 +166,37 @@ def unrolled_cost_func(P,sizes,Xnum,ynum):
 
     y          = T.ivector('y')
     X          = T.tensor3('X')
-    cost = full_cost(W,V,U,B,X,y)
-    return cost.eval({X:Xnum,y:ynum})
+    cost = full_cost(W,V,U,B,Xnum,ynum)
+    return cost.eval()
 
 
 grads   = T.grad(cost,params)
 grads_func = theano.function([X,y], grads)
-def unrolled_grads_func(P,sizes,X,y):
+def parametr_grad(W,V,U,B):
+    y          = T.ivector('y')
+    X          = T.tensor3('X')
+    cost = full_cost(W,V,U,B,X,y)
+    return T.grad(cost,[W,V,U,B])
 
-    W =grads_func(X,y)[0].reshape(sizes['W'][0]*sizes['W'][1])
-    V =grads_func(X,y)[1].reshape(sizes['V'][0]*sizes['V'][1])
-    U =grads_func(X,y)[2].reshape(sizes['U'][0]*sizes['U'][1])
-    B =grads_func(X,y)[3].reshape(sizes['B'][0])
-    return np.hstack((W,V,U,B))
+def unrolled_grads_func(P,sizes,Xnum,ynum):
+    W = P[:sizes['W'][0]*sizes['W'][1]]
+    W = W.reshape(sizes['W'])
+
+    V = P[sizes['W'][0]*sizes['W'][1] : (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1])]
+    V = V.reshape(sizes['V'])
+
+    U = P[(sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]) : (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]+sizes['U'][0]*sizes['U'][1])]
+    U = U.reshape(sizes['U'])
+
+    B = P[ (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]+sizes['U'][0]*sizes['U'][1]) :]
+    B = B.reshape(sizes['B'])
+    grads_tmp = parametr_grad(W,V,U,B)
+    num_grads = grads_tmp.eval({X:Xnum,y:ynum})
+    dW =num_grads[0].reshape(sizes['W'][0]*sizes['W'][1])
+    dV =num_grads[1].reshape(sizes['V'][0]*sizes['V'][1])
+    dU =num_grads[2].reshape(sizes['U'][0]*sizes['U'][1])
+    dB =num_grads[3].reshape(sizes['B'][0])
+    return np.hstack((dW,dV,dU,dB))
 
 def armijo_rule(P,sizes,examples,labels,c1=1e-4,c2=0.9,beta=0.1,alpha=0.1):
 
@@ -217,10 +208,6 @@ def armijo_rule(P,sizes,examples,labels,c1=1e-4,c2=0.9,beta=0.1,alpha=0.1):
         if (unrolled_cost_func(P+alpha*pk,sizes,examples,labels) < unrolled_cost_func(P,sizes,examples,labels)+c1*alpha*np.dot(pk,unrolled_grads_func(P,sizes,examples,labels))):
             break
         alpha = alpha*beta
-   
-    # if (np.dot(pk,unrolled_cost_func(P-alpha*pk,sizes,examples,labels)) < c2*np.dot(pk,unrolled_grads_func(P,sizes,examples,labels))):
-    #     return  None
-    # else:
     return alpha
 updates = []
 for param_i, grad_i in zip(params,grads):
