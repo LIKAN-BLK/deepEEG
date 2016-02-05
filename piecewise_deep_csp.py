@@ -172,30 +172,15 @@ def unrolled_cost_func(P,sizes,Xnum,ynum):
 
 grads   = T.grad(cost,params)
 grads_func = theano.function([X,y], grads)
-def parametr_grad(W,V,U,B):
-    y          = T.ivector('y')
-    X          = T.tensor3('X')
-    cost = full_cost(W,V,U,B,X,y)
-    return T.grad(cost,[W,V,U,B])
+
 
 def unrolled_grads_func(P,sizes,Xnum,ynum):
-    W = P[:sizes['W'][0]*sizes['W'][1]]
-    W = W.reshape(sizes['W'])
+    grads_tmp = grads_func(Xnum,ynum)
 
-    V = P[sizes['W'][0]*sizes['W'][1] : (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1])]
-    V = V.reshape(sizes['V'])
-
-    U = P[(sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]) : (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]+sizes['U'][0]*sizes['U'][1])]
-    U = U.reshape(sizes['U'])
-
-    B = P[ (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]+sizes['U'][0]*sizes['U'][1]) :]
-    B = B.reshape(sizes['B'])
-    grads_tmp = parametr_grad(W,V,U,B)
-    num_grads = grads_tmp.eval({X:Xnum,y:ynum})
-    dW =num_grads[0].reshape(sizes['W'][0]*sizes['W'][1])
-    dV =num_grads[1].reshape(sizes['V'][0]*sizes['V'][1])
-    dU =num_grads[2].reshape(sizes['U'][0]*sizes['U'][1])
-    dB =num_grads[3].reshape(sizes['B'][0])
+    dW =grads_tmp[0].reshape(sizes['W'][0]*sizes['W'][1])
+    dV =grads_tmp[1].reshape(sizes['V'][0]*sizes['V'][1])
+    dU =grads_tmp[2].reshape(sizes['U'][0]*sizes['U'][1])
+    dB =grads_tmp[3].reshape(sizes['B'][0])
     return np.hstack((dW,dV,dU,dB))
 
 def armijo_rule(P,sizes,examples,labels,c1=1e-4,c2=0.9,beta=0.1,alpha=0.1):
@@ -219,37 +204,42 @@ train_model = theano.function([index,lr], cost, updates=updates,
           X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
           y: y_train_T[index * batch_size: (index + 1) * batch_size]})
 
+def test_model_functional(W,V,U,B,X,y):
+    spacial_filtered   = T.tensordot(X,W,axes=[2,0])
+    layer0_out = T.pow(spacial_filtered, 2)
+    variance   = T.tensordot(layer0_out, V, axes=[1,0])
+    layer1_out = T.log((variance))[:,:,0]
+    layer2     = LogisticRegression(input=layer1_out,U=U,B=B, n_in=5, n_out=2)
+    return layer2.errors(y)
 
 
-# test_model = theano.function([], layer2.errors(y), givens = {
-#         X: x_test_filt_T, y: y_test_T})
+test_model = theano.function([], test_model_functional(csp_w, avg_v,u,b,X,y), givens = {
+        X: x_test_filt_T, y: y_test_T})
 
 
 
 
 for i in range(epochs):
     for j in range(y_train.size/batch_size):
-        W_num = csp_w.eval().reshape(csp_w.eval().shape[0]*csp_w.eval().shape[1])
-        V_num = avg_v.eval().reshape(avg_v.eval().shape[0]*avg_v.eval().shape[1])
-        U_num = params[2].eval().reshape(params[2].eval().shape[0]*params[2].eval().shape[1])
-        B_num = params[3].eval().reshape(params[3].eval().shape[0])
-        sizes = {'W':csp_w.eval().shape,'V':avg_v.eval().shape,'U':params[2].eval().shape,'B':params[3].eval().shape}
-        P = np.hstack((W_num,V_num,U_num,B_num))
-        Xbatch = x_train_filt_T.eval()[j * batch_size: (j + 1) * batch_size]
-        ybatch = y_train_T.eval()[j * batch_size: (j + 1) * batch_size]
-        unrolled_cost_func(P,sizes,Xbatch,ybatch)
-        # alpha=sp.optimize.line_search(unrolled_cost_func,unrolled_grads_func,P,-(unrolled_grads_func(P,sizes,Xbatch,ybatch)),args=(sizes,Xbatch,ybatch))
-        alpha=armijo_rule(P,sizes,Xbatch,ybatch)
-        print alpha
-        cost_ij = train_model(j,alpha)
-
-        #num_gradij = num_gradient(j)
+        # W_vect = csp_w.ravel().eval()
+        # V_vect = avg_v.ravel().eval()
+        # U_vect = params[2].ravel().eval()
+        # B_vect = params[3].ravel().eval()
+        # sizes = {'W':csp_w.eval().shape,'V':avg_v.eval().shape,'U':params[2].eval().shape,'B':params[3].eval().shape}
+        # P = np.hstack((W_vect,V_vect,U_vect,B_vect))
+        # Xbatch = x_train_filt_T.eval()[j * batch_size: (j + 1) * batch_size]
+        # ybatch = y_train_T.eval()[j * batch_size: (j + 1) * batch_size]
+        # alpha=armijo_rule(P,sizes,Xbatch,ybatch)
+        # print alpha
+        cost_ij = train_model(j,0.01)
 
 
-    # er = test_model()
+
+
+    er = test_model()
     print 'Epoch = %i' % i
     print 'Cost = %f' % cost_ij
-    # print 'Test error = % f' % er
+    print 'Test error = % f' % er
     if np.isnan(cost_ij):
         break
 
