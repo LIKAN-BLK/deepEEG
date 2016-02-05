@@ -135,7 +135,7 @@ layer0_out = T.pow(spacial_filtered, 2)
 variance   = T.tensordot(layer0_out, v, axes=[1,0])
 layer1_out = T.log((variance))[:,:,0]
 layer2     = LogisticRegression(input=layer1_out,U=u,B=b, n_in=5, n_out=2)
-cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(V,2)) - 1000*(T.sgn(T.min(v)) - 1)*T.pow(T.min(v),2)
+cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(v,2)) - 1000*(T.sgn(T.min(v)) - 1)*T.pow(T.min(v),2)
 
 
 # def unrolled_cost_func(P,sizes,Xnum,ynum):
@@ -158,7 +158,7 @@ cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(V,2)) - 1000*(T.s
 
 params=[w,v,u,b]
 grads   = T.grad(cost,params)
-grads_func = theano.function([X,y,w,v,u,b], grads)
+
 
 
 # def unrolled_grads_func(P,sizes,Xnum,ynum):
@@ -215,7 +215,7 @@ for i in range(epochs):
     for j in range(y_train.size/batch_size):
 
         cost_num.append(train_model(j,W,V,U,B))
-        W,V,U,B=update_params(j,W,V,U,B,0.07)
+        W,V,U,B=update_params(j,W,V,U,B,0.01)
 
 
 
