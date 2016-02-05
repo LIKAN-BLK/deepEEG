@@ -47,11 +47,11 @@ class LogisticRegression(object):
         :type input: theano.tensor.TensorType
         :param input: symbolic variable that describes the input of the
                       architecture (one minibatch)
-        :type U: theano.shared matrix
-        :param U: shared variable that describes classifier matrix
+        :type U:
+        :param U: symbolic variable that describes classifier matrix
 
-        :type B: theano.shared matrix
-        :param B:  shared variable that describes classifier bias matrix
+        :type B:
+        :param B:  symbolic variable that describes classifier bias matrix
 
         :type n_in: int
         :param n_in: number of input units, the dimension of the space in
