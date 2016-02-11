@@ -7,7 +7,7 @@ import theano.tensor as T
 from scipy import signal
 from sklearn import cross_validation
 from sklearn.linear_model import LogisticRegression as LR
-from theano.compile.debugmode import DebugMode
+import matplotlib.pyplot as plt
 def man_filter(x,y,beta):
     x_t = x[:,:,np.squeeze(y).astype(bool)]
     x_nt = x[:,:,~(np.squeeze(y).astype(bool))]
@@ -100,8 +100,8 @@ x_test_filt  = signal.filtfilt(b, a, x_test, axis=0)
 
 
 
-W = csp(x_train_filt, y_train) #(CH x 5)
-
+# W = csp(x_train_filt, y_train) #(CH x 5)
+W=np.random.rand(28,5)
 # W = man_filter(x_train_filt,y_train,0.5)
 # W = W[:,0:5]
 V = np.ones((x.shape[0],1)) #(T x 1)
@@ -156,17 +156,25 @@ test_model = theano.function([], layer2.errors(y), givens = {
 num_gradient = theano.function([index], [grads[0],grads[1],grads[2],grads[3]], mode = 'DebugMode',
                                givens = {X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
                                          y: y_train_T[index * batch_size: (index + 1) * batch_size]})
-
+num_cost =np.array([])
+num_err = np.array([])
 for i in range(epochs):
+    tmp_cost = np.array([])
     for j in range(y_train.size/batch_size):
         # lr = sp.optimize.line_search(train_model(j),)
         cost_ij = train_model(j,0.01)
+        tmp_cost=np.append(tmp_cost,cost_ij)
         #num_gradij = num_gradient(j)
 
-
+    num_cost = np.append(num_cost,tmp_cost.mean())
+    er = test_model()
+    num_err=np.append(num_err,er)
     er = test_model()
     print 'Epoch = %i' % i
     print 'Cost = %f' % cost_ij
     print 'Test error = % f' % er
     if np.isnan(cost_ij):
         break
+plt.plot(np.arange(epochs),num_cost)
+plt.plot(np.arange(epochs),num_err)
+plt.show()
