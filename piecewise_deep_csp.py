@@ -7,7 +7,10 @@ import theano.tensor as T
 from scipy import signal
 from sklearn import cross_validation
 from sklearn.linear_model import LogisticRegression as LR
-from theano.compile.debugmode import DebugMode
+import matplotlib.pyplot as plt
+
+
+
 def man_filter(x,y,beta):
     x_t = x[:,:,np.squeeze(y).astype(bool)]
     x_nt = x[:,:,~(np.squeeze(y).astype(bool))]
@@ -73,11 +76,11 @@ def classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test):
     sc = logistic.score(fte.transpose(), y_test[:,0])
 
     return sc
-def armijo_rule(cost,g):
-    sigma = 0.1
-    beta = 0.5
-    a=0.01
 
+# def update_plot(plot,x_data,y_data):
+#     plot.set_data(np.append(plot.get_xdata(),x_data),np.append(plot.get_ydata(),y_data))
+#     # plot.set_ydata(np.append(plot.get_ydata(),y_data))
+#     plt.show()
 
 
 def main():
@@ -100,10 +103,10 @@ def main():
 
 
 
-    W = csp(x_train_filt, y_train) #(CH x 5)
+    # W = csp(x_train_filt, y_train) #(CH x 5)
 
-    # W = man_filter(x_train_filt,y_train,0.5)
-    # W = W[:,0:5]
+    W = man_filter(x_train_filt,y_train,0.5)
+    W = W[:,0:10]
     V = np.ones((x.shape[0],1)) #(T x 1)
     sc = classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test)
 
@@ -120,13 +123,13 @@ def main():
     # lr         = 0.01 # learning rate
     lr = T.scalar('lr')
     batch_size = y_train.size/4
-    epochs     = 250000
+    epochs     = 25000
     index      = T.lscalar('index')
     y          = T.ivector('y')
     X          = T.tensor3('X')
     csp_w      = theano.shared(W)
     avg_v      = theano.shared(V)
-    u = theano.shared(value=np.zeros((5, 2), dtype=theano.config.floatX),   #TODO change 5 to number of eigenvector , 2 to number of classes
+    u = theano.shared(value=np.zeros((10, 2), dtype=theano.config.floatX),   #TODO change 5 to number of eigenvector , 2 to number of classes
                                     name='W', borrow=True)
     b = theano.shared(value=np.zeros((2,),dtype=theano.config.floatX),      #TODO change 2 to number of classes
                                    name='b', borrow=True)
@@ -144,7 +147,7 @@ def main():
         layer0_out = T.pow(spacial_filtered, 2)
         variance   = T.tensordot(layer0_out, V, axes=[1,0])
         layer1_out = T.log((variance))[:,:,0]
-        layer2     = LogisticRegression(input=layer1_out,U=U,B=B, n_in=5, n_out=2)
+        layer2     = LogisticRegression(input=layer1_out,U=U,B=B)
         cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(V,2)) - 1000*(T.sgn(T.min(V)) - 1)*T.pow(T.min(V),2)
         return cost
 
@@ -204,22 +207,24 @@ def main():
               X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
               y: y_train_T[index * batch_size: (index + 1) * batch_size]})
 
-    # def test_model_functional(W,V,U,B,X,y):
-    #     spacial_filtered   = T.tensordot(X,W,axes=[2,0])
-    #     layer0_out = T.pow(spacial_filtered, 2)
-    #     variance   = T.tensordot(layer0_out, V, axes=[1,0])
-    #     layer1_out = T.log((variance))[:,:,0]
-    #     layer2     = LogisticRegression(input=layer1_out,U=U,B=B, n_in=5, n_out=2)
-    #     return layer2.errors(y)
+    def test_model_functional(W,V,U,B,X,y):
+        spacial_filtered   = T.tensordot(X,W,axes=[2,0])
+        layer0_out = T.pow(spacial_filtered, 2)
+        variance   = T.tensordot(layer0_out, V, axes=[1,0])
+        layer1_out = T.log((variance))[:,:,0]
+        layer2     = LogisticRegression(input=layer1_out,U=U,B=B)
+        return layer2.errors(y)
 
 
-    # test_model = theano.function([], test_model_functional(csp_w, avg_v,u,b,X,y), givens = {
-    #         X: x_test_filt_T, y: y_test_T})
+    test_model = theano.function([], test_model_functional(csp_w,avg_v,u,b,X,y), givens = {
+            X: x_test_filt_T, y: y_test_T})
 
 
 
-
+    num_cost =np.array([])
+    num_err = np.array([])
     for i in range(epochs):
+        tmp_cost = np.array([])
         for j in range(y_train.size/batch_size):
             # W_vect = csp_w.ravel().eval()
             # V_vect = avg_v.ravel().eval()
@@ -232,15 +237,21 @@ def main():
             # alpha=armijo_rule(P,sizes,Xbatch,ybatch)
             # print alpha
             cost_ij = train_model(j,0.01)
+            tmp_cost=np.append(tmp_cost,cost_ij)
 
+        num_cost = np.append(num_cost,tmp_cost.mean())
+        er = test_model()
+        num_err=np.append(num_err,er)
+        print 'Epoch = %i' % i
+        print 'Cost = %f' % cost_ij
+        print 'Test error = % f' % er
 
+        if np.isnan(cost_ij):
+            break
+    plt.plot(np.arange(epochs),num_cost)
+    plt.plot(np.arange(epochs),num_err)
 
+    plt.show()
 
-        # er = test_model()
-        # print 'Epoch = %i' % i
-        # print 'Cost = %f' % cost_ij
-        # print 'Test error = % f' % er
-        # if np.isnan(cost_ij):
-        #     break
 
 main()

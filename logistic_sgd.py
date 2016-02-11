@@ -42,7 +42,7 @@ class LogisticRegression(object):
     determine a class membership probability.
     """
 
-    def __init__(self, input,U,B, n_in, n_out):
+    def __init__(self, input,U,B):
         """ Initialize the parameters of the logistic regression
         :type input: theano.tensor.TensorType
         :param input: symbolic variable that describes the input of the
@@ -53,12 +53,7 @@ class LogisticRegression(object):
         :type B: theano.shared matrix
         :param B:  shared variable that describes classifier bias matrix
 
-        :type n_in: int
-        :param n_in: number of input units, the dimension of the space in
-                     which the datapoints lie
-        :type n_out: int
-        :param n_out: number of output units, the dimension of the space in
-                      which the labels lie
+
         """
 
         # initialize with 0 the weights W as a matrix of shape (n_in, n_out)
