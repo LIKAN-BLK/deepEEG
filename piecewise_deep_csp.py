@@ -77,54 +77,37 @@ def classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test):
 
     return sc
 
-# def update_plot(plot,x_data,y_data):
-#     plot.set_data(np.append(plot.get_xdata(),x_data),np.append(plot.get_ydata(),y_data))
-#     # plot.set_ydata(np.append(plot.get_ydata(),y_data))
-#     plt.show()
-
-
 def main():
     # Load dataset
     data = loadmat('sp1s_aa')
     x = data['x_train']
     y = np.array(data['y_train'], dtype=int)
     y=y.transpose()
-    cv = cross_validation.LabelShuffleSplit(np.arange(y.size),1, test_size=0.2,random_state=0)
-    for train_indexes,test_indexes in cv:
-        x_train=x[:,:,train_indexes]
-        x_test=x[:,:,test_indexes]
-        y_train=y[train_indexes]
-        y_test=y[test_indexes]
+    samp_rate = 100.
+    (b, a) = signal.butter(5, np.array([8., 30.]) / (samp_rate / 2.), 'band')
+    x_filt = signal.filtfilt(b, a, x, axis=0)
 
-        # Band-pass filter signal
-        samp_rate = 100.
-        (b, a) = signal.butter(5, np.array([8., 30.]) / (samp_rate / 2.), 'band')
-        x_train_filt = signal.filtfilt(b, a, x_train, axis=0)
-        x_test_filt  = signal.filtfilt(b, a, x_test, axis=0)
-
-
-
+    def calcCostnError(X_train,y_train,X_test,y_test):
         # W = csp(x_train_filt, y_train) #(CH x 5)
-
-        W = man_filter(x_train_filt,y_train,0.5)
+        W = man_filter(X_train,y_train,0.5)
         W = W[:,0:10]
         V = np.ones((x.shape[0],1)) #(T x 1)
-        sc = classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test)
+
 
         # Fine tune CSP pipeline
         # Note input data dim: [batches, time, channel]
         # Filter dim: [channel_in, channel_out]
         from logistic_sgd import LogisticRegression
 
-        x_train_filt_T = theano.shared(x_train_filt.transpose(2, 0, 1))
-        x_test_filt_T  = theano.shared(x_test_filt.transpose(2, 0, 1))
+        x_train_filt_T = theano.shared(X_train.transpose(2, 0, 1))
+        x_test_filt_T  = theano.shared(X_test.transpose(2, 0, 1))
         y_train_T      = T.cast( theano.shared(y_train[:,0]), 'int32')
         y_test_T       = T.cast( theano.shared(y_test[:,0]) , 'int32')
 
         # lr         = 0.01 # learning rate
         lr = T.scalar('lr')
         batch_size = y_train.size/4
-        epochs     = 25000
+        epochs     = 2500
         index      = T.lscalar('index')
         y          = T.ivector('y')
         X          = T.tensor3('X')
@@ -134,15 +117,6 @@ def main():
                                         name='W', borrow=True)
         b = theano.shared(value=np.zeros((2,),dtype=theano.config.floatX),      #TODO change 2 to number of classes
                                        name='b', borrow=True)
-        # proj_csp   = T.tensordot(X,csp_w,axes=[2,0])
-        # layer0_out = T.pow(proj_csp, 2)
-        #
-        # variance   = T.tensordot(layer0_out, avg_v, axes=[1,0])
-        #
-        # layer1_out = T.log((variance))[:,:,0]
-        # layer2     = LogisticRegression(input=layer1_out, n_in=5, n_out=2)
-        # cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(avg_v,2)) - 1000*(T.sgn(T.min(avg_v)) - 1)*T.pow(T.min(avg_v),2)
-
         def full_cost(W,V,U,B,X,y):
             spacial_filtered   = T.tensordot(X,W,axes=[2,0])
             layer0_out = T.pow(spacial_filtered, 2)
@@ -155,49 +129,7 @@ def main():
 
         params  = [csp_w, avg_v,u,b]
         cost = full_cost(csp_w, avg_v,u,b,X,y)
-        # def unrolled_cost_func(P,sizes,Xnum,ynum):
-        #     W = P[:sizes['W'][0]*sizes['W'][1]]
-        #     W = W.reshape(sizes['W'])
-        #
-        #     V = P[sizes['W'][0]*sizes['W'][1] : (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1])]
-        #     V = V.reshape(sizes['V'])
-        #
-        #     U = P[(sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]) : (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]+sizes['U'][0]*sizes['U'][1])]
-        #     U = U.reshape(sizes['U'])
-        #
-        #     B = P[ (sizes['W'][0]*sizes['W'][1]+sizes['V'][0]*sizes['V'][1]+sizes['U'][0]*sizes['U'][1]) :]
-        #     B = B.reshape(sizes['B'])
-        #
-        #     y          = T.ivector('y')
-        #     X          = T.tensor3('X')
-        #     cost = full_cost(W,V,U,B,Xnum,ynum)
-        #     return cost.eval()
-
-
         grads   = T.grad(cost,params)
-        # grads_func = theano.function([X,y], grads)
-
-
-        # def unrolled_grads_func(P,sizes,Xnum,ynum):
-        #     grads_tmp = grads_func(Xnum,ynum)
-        #
-        #     dW =grads_tmp[0].reshape(sizes['W'][0]*sizes['W'][1])
-        #     dV =grads_tmp[1].reshape(sizes['V'][0]*sizes['V'][1])
-        #     dU =grads_tmp[2].reshape(sizes['U'][0]*sizes['U'][1])
-        #     dB =grads_tmp[3].reshape(sizes['B'][0])
-        #     return np.hstack((dW,dV,dU,dB))
-
-        # def armijo_rule(P,sizes,examples,labels,c1=1e-4,c2=0.9,beta=0.1,alpha=0.1):
-        #
-        #     y          = T.ivector('y')
-        #     X          = T.tensor3('X')
-        #
-        #     pk=-unrolled_grads_func(P,sizes,examples,labels)
-        #     while True:
-        #         if (unrolled_cost_func(P+alpha*pk,sizes,examples,labels) < unrolled_cost_func(P,sizes,examples,labels)+c1*alpha*np.dot(pk,unrolled_grads_func(P,sizes,examples,labels))):
-        #             break
-        #         alpha = alpha*beta
-        #     return alpha
         updates = []
         for param_i, grad_i in zip(params,grads):
             updates.append((param_i, param_i - lr*grad_i))
@@ -227,32 +159,40 @@ def main():
         for i in range(epochs):
             tmp_cost = np.array([])
             for j in range(y_train.size/batch_size):
-                # W_vect = csp_w.ravel().eval()
-                # V_vect = avg_v.ravel().eval()
-                # U_vect = params[2].ravel().eval()
-                # B_vect = params[3].ravel().eval()
-                # sizes = {'W':csp_w.eval().shape,'V':avg_v.eval().shape,'U':params[2].eval().shape,'B':params[3].eval().shape}
-                # P = np.hstack((W_vect,V_vect,U_vect,B_vect))
-                # Xbatch = x_train_filt_T.eval()[j * batch_size: (j + 1) * batch_size]
-                # ybatch = y_train_T.eval()[j * batch_size: (j + 1) * batch_size]
-                # alpha=armijo_rule(P,sizes,Xbatch,ybatch)
-                # print alpha
                 cost_ij = train_model(j,0.01)
                 tmp_cost=np.append(tmp_cost,cost_ij)
 
             num_cost = np.append(num_cost,tmp_cost.mean())
             er = test_model()
             num_err=np.append(num_err,er)
-            print 'Epoch = %i' % i
-            print 'Cost = %f' % cost_ij
-            print 'Test error = % f' % er
-
+            # print 'Epoch = %i' % i
+            # print 'Cost = %f' % cost_ij
+            # print 'Test error = % f' % er
             if np.isnan(cost_ij):
                 break
-        plt.plot(np.arange(epochs),num_cost)
-        plt.plot(np.arange(epochs),num_err)
+        return num_cost,num_err
+    num_of_folds = 10
+    cv = cross_validation.LabelShuffleSplit(np.arange(y.size),num_of_folds, test_size=0.2,random_state=0)
+    num_cost=np.zeros(2500)
+    num_err=np.zeros(2500)
+    for train_indexes,test_indexes in cv:
+        x_train=x_filt[:,:,train_indexes]
+        x_test=x_filt[:,:,test_indexes]
+        y_train=y[train_indexes]
+        y_test=y[test_indexes]
 
-        plt.show()
+        # Band-pass filter signal
+        tmp_num_cost,tmp_num_err = calcCostnError(x_train,y_train,x_test,y_test)
+        num_cost += tmp_num_cost
+        num_err += tmp_num_err
+
+    num_cost=num_cost/num_of_folds
+    num_err=num_err/num_of_folds
+    print num_cost
+    print num_err
+    plt.plot(np.arange(len(num_cost)),num_cost)
+    plt.plot(np.arange(len(num_cost)),num_err)
+    plt.show()
 
 
 main()
