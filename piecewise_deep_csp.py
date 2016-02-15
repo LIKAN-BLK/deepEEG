@@ -37,8 +37,8 @@ def csp(x_train_filt, y_train):
     spatial filters W"""
 
     # Calculate correlation matrices
-    X0 = x_train_filt[:,:,y_train[:,0]==0]
-    X1 = x_train_filt[:,:,y_train[:,0]==1]
+    X0 = x_train_filt[:,:,y_train==0]
+    X1 = x_train_filt[:,:,y_train==1]
 
     C0 = 0.
     for i in xrange( X0.shape[2] ):
@@ -77,102 +77,110 @@ def classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test):
 
     return sc
 
+def loadCustomData(path):
+    dataNT = loadmat(path+'NT_before_dec_5Hz.mat')['eegNTp_before_dec']
+    dataT = loadmat(path+'T_before_dec_5Hz.mat')['eegTp_before_dec']
+    data = np.dstack((dataNT,dataT))
+    label = np.hstack((np.zeros(dataNT.shape[2]),(np.ones(dataT.shape[2]))))
+
+    return data,label
+
+def calcCostnError(X_train, y_train, X_test, y_test):
+    W = csp(X_train, y_train)  # (CH x 5)
+    # W = man_filter(X_train,y_train,0.5)
+    # W = W[:,0:5]
+    V = np.ones((X_train.shape[0], 1))  # (T x 1)
+
+
+    # Fine tune CSP pipeline
+    # Note input data dim: [batches, time, channel]
+    # Filter dim: [channel_in, channel_out]
+    from logistic_sgd import LogisticRegression
+
+    x_train_filt_T = theano.shared(X_train.transpose(2, 0, 1))
+    x_test_filt_T = theano.shared(X_test.transpose(2, 0, 1))
+    y_train_T = T.cast(theano.shared(y_train), 'int32')
+    y_test_T = T.cast(theano.shared(y_test), 'int32')
+
+    # lr         = 0.01 # learning rate
+    lr = T.scalar('lr')
+    batch_size = y_train.size / 4
+    epochs = 2500
+    index = T.lscalar('index')
+    y = T.ivector('y')
+    X = T.tensor3('X')
+    csp_w = theano.shared(W)
+    avg_v = theano.shared(V)
+    u = theano.shared(value=np.zeros((5, 2), dtype=theano.config.floatX),
+                      # TODO change 5 to number of eigenvector , 2 to number of classes
+                      name='W', borrow=True)
+    b = theano.shared(value=np.zeros((2,), dtype=theano.config.floatX),  # TODO change 2 to number of classes
+                      name='b', borrow=True)
+
+    def full_cost(W, V, U, B, X, y):
+        spacial_filtered = T.tensordot(X, W, axes=[2, 0])
+        layer0_out = T.pow(spacial_filtered, 2)
+        variance = T.tensordot(layer0_out, V, axes=[1, 0])
+        layer1_out = T.log((variance))[:, :, 0]
+        layer2 = LogisticRegression(input=layer1_out, U=U, B=B)
+        cost = layer2.negative_log_likelihood(y) + .01 * T.sum(T.pow(V, 2)) - 1000 * (T.sgn(T.min(V)) - 1) * T.pow(
+            T.min(V), 2)
+        return cost
+
+    params = [csp_w, avg_v, u, b]
+    cost = full_cost(csp_w, avg_v, u, b, X, y)
+    grads = T.grad(cost, params)
+    updates = []
+    for param_i, grad_i in zip(params, grads):
+        updates.append((param_i, param_i - lr * grad_i))
+
+    train_model = theano.function([index, lr], cost, updates=updates,
+                                  givens={
+                                      X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
+                                      y: y_train_T[index * batch_size: (index + 1) * batch_size]})
+
+    def test_model_functional(W, V, U, B, X, y):
+        spacial_filtered = T.tensordot(X, W, axes=[2, 0])
+        layer0_out = T.pow(spacial_filtered, 2)
+        variance = T.tensordot(layer0_out, V, axes=[1, 0])
+        layer1_out = T.log((variance))[:, :, 0]
+        layer2 = LogisticRegression(input=layer1_out, U=U, B=B)
+        return layer2.errors(y)
+
+    test_model = theano.function([], test_model_functional(csp_w, avg_v, u, b, X, y), givens={
+        X: x_test_filt_T, y: y_test_T})
+
+    num_cost = np.array([])
+    num_err = np.array([])
+    for i in range(epochs):
+        tmp_cost = np.array([])
+        for j in range(y_train.size / batch_size):
+            cost_ij = train_model(j, 0.01)
+            tmp_cost = np.append(tmp_cost, cost_ij)
+
+        num_cost = np.append(num_cost, tmp_cost.mean())
+        er = test_model()
+        num_err = np.append(num_err, er)
+        # print 'Epoch = %i' % i
+        # print 'Cost = %f' % cost_ij
+        # print 'Test error = % f' % er
+        if np.isnan(cost_ij):
+            break
+    return num_cost, num_err
+
+
 def main():
     # Load dataset
-    data = loadmat('sp1s_aa')
-    x = data['x_train']
-    y = np.array(data['y_train'], dtype=int)
-    y=y.transpose()
+    # data = loadmat('sp1s_aa')
+    # x = data['x_train']
+    # y = np.array(data['y_train'], dtype=int)
+    # y=y.transpose()
+    x,y = loadCustomData('D:\LIKAN\data\\01\\')
     samp_rate = 100.
     (b, a) = signal.butter(5, np.array([8., 30.]) / (samp_rate / 2.), 'band')
     x_filt = signal.filtfilt(b, a, x, axis=0)
-
-    def calcCostnError(X_train,y_train,X_test,y_test):
-        # W = csp(x_train_filt, y_train) #(CH x 5)
-        W = man_filter(X_train,y_train,0.5)
-        W = W[:,0:10]
-        V = np.ones((x.shape[0],1)) #(T x 1)
-
-
-        # Fine tune CSP pipeline
-        # Note input data dim: [batches, time, channel]
-        # Filter dim: [channel_in, channel_out]
-        from logistic_sgd import LogisticRegression
-
-        x_train_filt_T = theano.shared(X_train.transpose(2, 0, 1))
-        x_test_filt_T  = theano.shared(X_test.transpose(2, 0, 1))
-        y_train_T      = T.cast( theano.shared(y_train[:,0]), 'int32')
-        y_test_T       = T.cast( theano.shared(y_test[:,0]) , 'int32')
-
-        # lr         = 0.01 # learning rate
-        lr = T.scalar('lr')
-        batch_size = y_train.size/4
-        epochs     = 2500
-        index      = T.lscalar('index')
-        y          = T.ivector('y')
-        X          = T.tensor3('X')
-        csp_w      = theano.shared(W)
-        avg_v      = theano.shared(V)
-        u = theano.shared(value=np.zeros((10, 2), dtype=theano.config.floatX),   #TODO change 5 to number of eigenvector , 2 to number of classes
-                                        name='W', borrow=True)
-        b = theano.shared(value=np.zeros((2,),dtype=theano.config.floatX),      #TODO change 2 to number of classes
-                                       name='b', borrow=True)
-        def full_cost(W,V,U,B,X,y):
-            spacial_filtered   = T.tensordot(X,W,axes=[2,0])
-            layer0_out = T.pow(spacial_filtered, 2)
-            variance   = T.tensordot(layer0_out, V, axes=[1,0])
-            layer1_out = T.log((variance))[:,:,0]
-            layer2     = LogisticRegression(input=layer1_out,U=U,B=B)
-            cost       = layer2.negative_log_likelihood(y)+.01*T.sum(T.pow(V,2)) - 1000*(T.sgn(T.min(V)) - 1)*T.pow(T.min(V),2)
-            return cost
-
-
-        params  = [csp_w, avg_v,u,b]
-        cost = full_cost(csp_w, avg_v,u,b,X,y)
-        grads   = T.grad(cost,params)
-        updates = []
-        for param_i, grad_i in zip(params,grads):
-            updates.append((param_i, param_i - lr*grad_i))
-
-
-        train_model = theano.function([index,lr], cost, updates=updates,
-              givens={
-                  X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
-                  y: y_train_T[index * batch_size: (index + 1) * batch_size]})
-
-        def test_model_functional(W,V,U,B,X,y):
-            spacial_filtered   = T.tensordot(X,W,axes=[2,0])
-            layer0_out = T.pow(spacial_filtered, 2)
-            variance   = T.tensordot(layer0_out, V, axes=[1,0])
-            layer1_out = T.log((variance))[:,:,0]
-            layer2     = LogisticRegression(input=layer1_out,U=U,B=B)
-            return layer2.errors(y)
-
-
-        test_model = theano.function([], test_model_functional(csp_w,avg_v,u,b,X,y), givens = {
-                X: x_test_filt_T, y: y_test_T})
-
-
-
-        num_cost =np.array([])
-        num_err = np.array([])
-        for i in range(epochs):
-            tmp_cost = np.array([])
-            for j in range(y_train.size/batch_size):
-                cost_ij = train_model(j,0.01)
-                tmp_cost=np.append(tmp_cost,cost_ij)
-
-            num_cost = np.append(num_cost,tmp_cost.mean())
-            er = test_model()
-            num_err=np.append(num_err,er)
-            # print 'Epoch = %i' % i
-            # print 'Cost = %f' % cost_ij
-            # print 'Test error = % f' % er
-            if np.isnan(cost_ij):
-                break
-        return num_cost,num_err
     num_of_folds = 10
-    cv = cross_validation.LabelShuffleSplit(np.arange(y.size),num_of_folds, test_size=0.2,random_state=0)
+    cv = cross_validation.LabelShuffleSplit(np.arange((y.shape[0])),num_of_folds, test_size=0.5,train_size=0.5)
     num_cost=np.zeros(2500)
     num_err=np.zeros(2500)
     for train_indexes,test_indexes in cv:
