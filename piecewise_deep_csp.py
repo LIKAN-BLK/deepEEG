@@ -138,6 +138,9 @@ def calcCostnError(X_train, y_train, X_test, y_test):
                                   givens={
                                       X: x_train_filt_T[index * batch_size: (index + 1) * batch_size],
                                       y: y_train_T[index * batch_size: (index + 1) * batch_size]})
+    test_model_cost = theano.function([], cost, givens={
+        X: x_test_filt_T, y: y_test_T})
+
 
     def test_model_functional(W, V, U, B, X, y):
         spacial_filtered = T.tensordot(X, W, axes=[2, 0])
@@ -150,7 +153,8 @@ def calcCostnError(X_train, y_train, X_test, y_test):
     test_model = theano.function([], test_model_functional(csp_w, avg_v, u, b, X, y), givens={
         X: x_test_filt_T, y: y_test_T})
 
-    num_cost = np.array([])
+    num_cost_train = np.array([])
+    num_cost_test = np.array([])
     num_err = np.array([])
     for i in range(epochs):
         tmp_cost = np.array([])
@@ -158,7 +162,8 @@ def calcCostnError(X_train, y_train, X_test, y_test):
             cost_ij = train_model(j, 0.01)
             tmp_cost = np.append(tmp_cost, cost_ij)
 
-        num_cost = np.append(num_cost, tmp_cost.mean())
+        num_cost_train = np.append(num_cost_train, tmp_cost.mean())
+        num_cost_test = np.append(num_cost_test,test_model_cost())
         er = test_model()
         num_err = np.append(num_err, er)
         # print 'Epoch = %i' % i
@@ -166,22 +171,23 @@ def calcCostnError(X_train, y_train, X_test, y_test):
         # print 'Test error = % f' % er
         if np.isnan(cost_ij):
             break
-    return num_cost, num_err
+    return num_cost_train,num_cost_test, num_err
 
 
 def main():
     # Load dataset
-    # data = loadmat('sp1s_aa')
-    # x = data['x_train']
-    # y = np.array(data['y_train'], dtype=int)
-    # y=y.transpose()
-    x,y = loadCustomData('D:\LIKAN\data\\01\\')
+    data = loadmat('sp1s_aa')
+    x = data['x_train']
+    y = np.array(data['y_train'], dtype=int)
+    y = np.squeeze(y)
+    # x,y = loadCustomData('D:\LIKAN\data\\01\\')
     samp_rate = 100.
     (b, a) = signal.butter(5, np.array([8., 30.]) / (samp_rate / 2.), 'band')
     x_filt = signal.filtfilt(b, a, x, axis=0)
     num_of_folds = 10
     cv = cross_validation.LabelShuffleSplit(np.arange((y.shape[0])),num_of_folds, test_size=0.5,train_size=0.5)
-    num_cost=np.zeros(2500)
+    num_cost_train=np.zeros(2500)
+    num_cost_test=np.zeros(2500)
     num_err=np.zeros(2500)
     for train_indexes,test_indexes in cv:
         x_train=x_filt[:,:,train_indexes]
@@ -190,16 +196,21 @@ def main():
         y_test=y[test_indexes]
 
         # Band-pass filter signal
-        tmp_num_cost,tmp_num_err = calcCostnError(x_train,y_train,x_test,y_test)
-        num_cost += tmp_num_cost
+        tmp_num_cost_train,tmp_num_cost_test,tmp_num_err = calcCostnError(x_train,y_train,x_test,y_test)
+        num_cost_train += tmp_num_cost_train
+        num_cost_test+=tmp_num_cost_test
         num_err += tmp_num_err
 
-    num_cost=num_cost/num_of_folds
+    num_cost_train=num_cost_train/num_of_folds
+    num_cost_test=num_cost_test/num_of_folds
     num_err=num_err/num_of_folds
-    print num_cost
+    print num_cost_train
+    print num_cost_test
     print num_err
-    plt.plot(np.arange(len(num_cost)),num_cost)
-    plt.plot(np.arange(len(num_cost)),num_err)
+    plt.plot(np.arange(len(num_cost_train)),num_cost_train)
+    plt.plot(np.arange(len(num_cost_test)),num_cost_test)
+
+    # plt.plot(np.arange(len(num_err)),num_err)
     plt.show()
 
 
