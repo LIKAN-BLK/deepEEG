@@ -8,6 +8,7 @@ from scipy import signal
 from sklearn import cross_validation
 from sklearn.linear_model import LogisticRegression as LR
 import matplotlib.pyplot as plt
+from multiprocessing import Pool
 
 
 
@@ -85,7 +86,11 @@ def loadCustomData(path):
 
     return data,label
 
-def calcCostnError(X_train, y_train, X_test, y_test):
+def calcCostnError(*args): # Arguments X_train, y_train, X_test, y_test - as a tuple
+    X_train = args[0][0]
+    y_train = args[0][1]
+    X_test = args[0][2]
+    y_test = args[0][3]
     W = csp(X_train, y_train)  # (CH x 5)
     # W = man_filter(X_train,y_train,0.5)
     # W = W[:,0:5]
@@ -171,7 +176,7 @@ def calcCostnError(X_train, y_train, X_test, y_test):
         # print 'Test error = % f' % er
         if np.isnan(cost_ij):
             break
-    return num_cost_train,num_cost_test, num_err
+    return (num_cost_train,num_cost_test, num_err)
 
 
 def main():
@@ -186,24 +191,14 @@ def main():
     x_filt = signal.filtfilt(b, a, x, axis=0)
     num_of_folds = 10
     cv = cross_validation.LabelShuffleSplit(np.arange((y.shape[0])),num_of_folds, test_size=0.5,train_size=0.5)
-    num_cost_train=np.zeros(2500)
-    num_cost_test=np.zeros(2500)
-    num_err=np.zeros(2500)
-    for train_indexes,test_indexes in cv:
-        x_train=x_filt[:,:,train_indexes]
-        x_test=x_filt[:,:,test_indexes]
-        y_train=y[train_indexes]
-        y_test=y[test_indexes]
-
-        # Band-pass filter signal
-        tmp_num_cost_train,tmp_num_cost_test,tmp_num_err = calcCostnError(x_train,y_train,x_test,y_test)
-        num_cost_train += tmp_num_cost_train
-        num_cost_test+=tmp_num_cost_test
-        num_err += tmp_num_err
-
-    num_cost_train=num_cost_train/num_of_folds
-    num_cost_test=num_cost_test/num_of_folds
-    num_err=num_err/num_of_folds
+    n_cores = 8
+    p = Pool(n_cores)
+    arglist = [(x_filt[:,:,train_indexes], y[train_indexes], x_filt[:,:,test_indexes], y[test_indexes]) \
+     for train_indexes, test_indexes in cv]
+    ret_tuples = p.map(calcCostnError, arglist)
+    num_cost_train = np.array([ret_tuples[i][0] for i in np.arange(n_cores)]).mean(axis=0)
+    num_cost_test = np.array([ret_tuples[i][1] for i in np.arange(n_cores)]).mean(axis=0)
+    num_err = np.array([ret_tuples[i][2] for i in np.arange(n_cores)]).mean(axis=0)
     print num_cost_train
     print num_cost_test
     print num_err
