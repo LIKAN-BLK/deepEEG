@@ -190,15 +190,15 @@ def main():
     (b, a) = signal.butter(5, np.array([8., 30.]) / (samp_rate / 2.), 'band')
     x_filt = signal.filtfilt(b, a, x, axis=0)
     num_of_folds = 10
-    cv = cross_validation.LabelShuffleSplit(np.arange((y.shape[0])),num_of_folds, test_size=0.5,train_size=0.5)
-    n_cores = 8
+    cv = cross_validation.ShuffleSplit(y.shape[0],num_of_folds, test_size=0.5,train_size=0.5)
+    n_cores = 3
     p = Pool(n_cores)
     arglist = [(x_filt[:,:,train_indexes], y[train_indexes], x_filt[:,:,test_indexes], y[test_indexes]) \
      for train_indexes, test_indexes in cv]
     ret_tuples = p.map(calcCostnError, arglist)
-    num_cost_train = np.array([ret_tuples[i][0] for i in np.arange(n_cores)]).mean(axis=0)
-    num_cost_test = np.array([ret_tuples[i][1] for i in np.arange(n_cores)]).mean(axis=0)
-    num_err = np.array([ret_tuples[i][2] for i in np.arange(n_cores)]).mean(axis=0)
+    num_cost_train = np.array([ret_tuples[i][0] for i in np.arange(num_of_folds)]).mean(axis=0)
+    num_cost_test = np.array([ret_tuples[i][1] for i in np.arange(num_of_folds)]).mean(axis=0)
+    num_err = np.array([ret_tuples[i][2] for i in np.arange(num_of_folds)]).mean(axis=0)
     print num_cost_train
     print num_cost_test
     print num_err
@@ -208,5 +208,5 @@ def main():
     # plt.plot(np.arange(len(num_err)),num_err)
     plt.show()
 
-
-main()
+if __name__ == '__main__':
+    main()
