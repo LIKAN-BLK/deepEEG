@@ -57,7 +57,7 @@ def csp(x_train_filt, y_train):
     D, V   = sp.linalg.eig(C1, C1+C0);
     ind = sorted(range(D.size), key=lambda k: D[k])
     V = V[:,ind];
-    W = np.hstack([V[:,0:2], V[:,25:]]);
+    W = np.hstack([V[:,0:2], V[:,-3:]]);
 
     return W
 
@@ -78,15 +78,16 @@ def classify_csp(W, V, x_train_filt, y_train, x_test_filt, y_test):
 
     return sc
 
-def loadCustomData(path):
-    dataNT = loadmat(path+'NT_before_dec_5Hz.mat')['eegNTp_before_dec']
-    dataT = loadmat(path+'T_before_dec_5Hz.mat')['eegTp_before_dec']
+def loadCustomData():
+    dataNT = loadmat('IrrelRPExp.mat')['IrrelData'].transpose(1,0,2)
+    dataT = loadmat('RelRPExp.mat')['RelData'].transpose(1,0,2)
+
     data = np.dstack((dataNT,dataT))
     label = np.hstack((np.zeros(dataNT.shape[2]),(np.ones(dataT.shape[2]))))
 
     return data,label
 
-def calcCostnError(*args): # Arguments X_train, y_train, X_test, y_test - as a tuple
+def calcCostError(*args): # Arguments X_train, y_train, X_test, y_test - as a tuple
     X_train = args[0][0]
     y_train = args[0][1]
     X_test = args[0][2]
@@ -176,29 +177,31 @@ def calcCostnError(*args): # Arguments X_train, y_train, X_test, y_test - as a t
         # print 'Test error = % f' % er
         if np.isnan(cost_ij):
             break
-    return (num_cost_train,num_cost_test, num_err)
+    return (num_cost_train,num_cost_test, num_err,avg_v.get_value())
 
 
 def main():
     # Load dataset
-    data = loadmat('sp1s_aa')
-    x = data['x_train']
-    y = np.array(data['y_train'], dtype=int)
-    y = np.squeeze(y)
-    # x,y = loadCustomData('D:\LIKAN\data\\01\\')
+    # data = loadmat('sp1s_aa')
+    # x = data['x_train']
+    # y = np.array(data['y_train'], dtype=int)
+    # y = np.squeeze(y)
+    x,y = loadCustomData()
     samp_rate = 100.
-    (b, a) = signal.butter(5, np.array([8., 30.]) / (samp_rate / 2.), 'band')
+    (b, a) = signal.butter(5, np.array([1., 30.]) / (samp_rate / 2.), 'band')
     x_filt = signal.filtfilt(b, a, x, axis=0)
-    num_of_folds = 10
-    cv = cross_validation.ShuffleSplit(y.shape[0],num_of_folds, test_size=0.5,train_size=0.5)
-    n_cores = 3
+    x_filt = x_filt[500::10,:,:]
+    num_of_folds = 100
+    cv = cross_validation.ShuffleSplit(y.shape[0],num_of_folds, test_size=0.3,train_size=0.7)
+    n_cores = 5
     p = Pool(n_cores)
     arglist = [(x_filt[:,:,train_indexes], y[train_indexes], x_filt[:,:,test_indexes], y[test_indexes]) \
      for train_indexes, test_indexes in cv]
-    ret_tuples = p.map(calcCostnError, arglist)
+    ret_tuples = p.map(calcCostError, arglist)
     num_cost_train = np.array([ret_tuples[i][0] for i in np.arange(num_of_folds)]).mean(axis=0)
     num_cost_test = np.array([ret_tuples[i][1] for i in np.arange(num_of_folds)]).mean(axis=0)
     num_err = np.array([ret_tuples[i][2] for i in np.arange(num_of_folds)]).mean(axis=0)
+    v = np.array([ret_tuples[i][3] for i in np.arange(num_of_folds)])
     print num_cost_train
     print num_cost_test
     print num_err
